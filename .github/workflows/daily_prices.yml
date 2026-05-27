@@ -21,14 +21,11 @@ jobs:
       - name: Create virtual environment & install dependencies
         run: |
           python -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install "supabase==2.3.0" "yfinance==1.4.0" "websockets>=13.0" python-dotenv pandas plotly "httpx==0.27.0"
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install "supabase==2.3.0" "yfinance==1.4.0" "websockets>=13.0" python-dotenv pandas plotly "httpx==0.27.0"
 
       - name: Run price refresh
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          source .venv/bin/activate
-          python update_prices.py
+        run: .venv/bin/python update_prices.py
