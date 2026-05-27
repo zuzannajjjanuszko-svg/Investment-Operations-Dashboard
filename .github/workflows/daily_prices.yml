@@ -19,7 +19,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install "supabase==2.3.0" "yfinance==0.2.36" "websockets>=13" python-dotenv pandas
+        run: pip install "supabase==2.3.0" "yfinance==0.2.36" "websockets==12.0" python-dotenv pandas plotly
 
       - name: Run price refresh
         env:
