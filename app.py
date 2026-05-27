@@ -29,6 +29,7 @@ ssi    = load("settlement_instructions")
 pos    = load("positions")
 trades = load("trades")
 breaks = load("reconciliation_breaks")
+nav_hist = load("nav_history")
 
 st.title("Fund Operations Dashboard")
 st.caption("Static data  |  Reconciliation  |  Trade monitoring  |  Fund overview")
