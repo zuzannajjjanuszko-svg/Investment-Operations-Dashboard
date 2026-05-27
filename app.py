@@ -205,23 +205,52 @@ with tab3:
 # ── TAB 4 — FUND OVERVIEW ────────────────────────────────────────────
 with tab4:
 
-    for _, f in funds.iterrows():
-        with st.expander(
-            f"{f['name']}  ({f['fund_type']})  —  {f['base_currency']}",
-            expanded=False
-        ):
-            c1,c2,c3,c4 = st.columns(4)
-            c1.metric("AUM (EUR)",   f"{f['aum_eur']/1e6:.1f}M")
-            c2.metric("NAV / Share", f"{f['nav_per_share']:.4f}")
-            c3.metric("Fund Type",   f["fund_type"])
-            c4.metric("Domicile",    f["domicile"])
+    nav_hist = load("nav_history")
+    # Break summary per fund
+    break_summary = (
+        breaks[breaks["status"].isin(["Open","Investigating"])]
+        .groupby("fund_id")
+        .agg(open_breaks=("break_id","count"), exposure=("break_value_eur","sum"))
+        .reset_index()
+    )
 
-            fp = pos[pos["fund_id"]==f["fund_id"]].merge(
-                inst[["isin","asset_class"]], on="isin", how="left"
+    for _, f in funds.iterrows():
+        fid = f["fund_id"]
+        b = break_summary[break_summary["fund_id"] == fid]
+        n_breaks = int(b["open_breaks"].values[0]) if len(b) else 0
+        exposure  = float(b["exposure"].values[0]) if len(b) else 0.0
+
+        label = f"{f['name']}  ({f['fund_type']})  —  {f['base_currency']}"
+        with st.expander(label, expanded=False):
+
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            c1.metric("AUM (EUR)",      f"{f['aum_eur']/1e6:.1f}M")
+            c2.metric("NAV / Share",    f"{f['nav_per_share']:.4f}")
+            c3.metric("Fund Type",      f["fund_type"])
+            c4.metric("Domicile",       f["domicile"])
+            c5.metric("Open Breaks",    n_breaks,
+                      delta=None if n_breaks == 0 else f"EUR {exposure:,.0f}",
+                      delta_color="inverse")
+            c6.metric("NAV Date",       str(f["nav_date"]))
+
+            col_chart, col_nav, col_pos = st.columns([1, 1, 1])
+
+            # NAV trend
+            fh = nav_hist[nav_hist["fund_id"] == fid].sort_values("nav_date")
+            if not fh.empty:
+                col_nav.caption("NAV per share — 30 day history")
+                col_nav.line_chart(fh.set_index("nav_date")["nav_per_share"])
+            else:
+                col_nav.caption("No NAV history yet — run update_prices.py")
+
+            # Asset class breakdown
+            fp = pos[pos["fund_id"] == fid].merge(
+                inst[["isin", "asset_class"]], on="isin", how="left"
             )
             if not fp.empty:
                 ac = fp.groupby("asset_class")["market_value_eur"].sum().reset_index()
-                ac.columns = ["Asset Class","Market Value EUR"]
-                ch, tbl = st.columns([1,1])
-                ch.bar_chart(ac.set_index("Asset Class"))
-                tbl.dataframe(ac, use_container_width=True)
+                ac.columns = ["Asset Class", "Market Value EUR"]
+                col_chart.caption("Portfolio by asset class")
+                col_chart.bar_chart(ac.set_index("Asset Class"))
+                col_pos.caption("Breakdown (EUR)")
+                col_pos.dataframe(ac, use_container_width=True)
