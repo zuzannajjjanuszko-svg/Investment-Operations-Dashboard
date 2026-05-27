@@ -140,6 +140,9 @@ with tab2:
         if row["status"] == "Open":          return ["background-color:#C8A0A0"] * len(row)
         if row["status"] == "Investigating": return ["background-color:#C8B888"] * len(row)
         return ["background-color:#A0B8A0"] * len(row)
+    
+    st.caption("🔴 Open  🟡 Investigating  🟢 Resolved")
+
     st.dataframe(
         d[["break_id","name_fund","isin","name_inst","asset_class",
            "internal_qty","custodian_qty","break_qty","break_value_eur",
@@ -193,6 +196,9 @@ with tab3:
         if row["status"]=="Failed" or row["overdue"]: return ["background-color:#C8A0A0"]*len(row)
         if row["ssi_missing"]:                        return ["background-color:#C8B888"]*len(row)
         return [""]*len(row)
+    
+    st.caption("🔴 Failed or overdue  🟡 Missing active SSI  ⬜ Normal")
+    
     st.dataframe(
         d[["trade_id","name_fund","name_inst","asset_class","trade_type",
            "quantity","price","trade_date","settlement_date","status",
