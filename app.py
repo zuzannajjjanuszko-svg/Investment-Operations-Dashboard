@@ -240,7 +240,10 @@ with tab4:
             fh = nav_hist[nav_hist["fund_id"] == fid].sort_values("nav_date")
             if not fh.empty:
                 col_nav.caption("NAV per share — 30 day history")
-                col_nav.line_chart(fh.set_index("nav_date")["nav_per_share"])
+                import plotly.express as px
+                fig = px.line(fh, x="nav_date", y="nav_per_share", title="NAV per share")
+                fig.update_yaxes(range=[fh["nav_per_share"].min() * 0.995, fh["nav_per_share"].max() * 1.005])
+                col_nav.plotly_chart(fig, use_container_width=True)
             else:
                 col_nav.caption("No NAV history yet — run update_prices.py")
 
