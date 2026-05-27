@@ -1,35 +1,38 @@
 # Fund Static Data & Investment Operations Dashboard
 
-A simulation of the daily operational workflow in a fund services middle office:
-static data management, position reconciliation, trade settlement monitoring,
-and fund NAV overview.
+Fund operations dashboard simulating middle office workflows — static data, SSI monitoring, reconciliation breaks, and trade settlement tracking. Built with Python, Supabase, and Streamlit.
 
-Built with Python, pandas, Supabase (PostgreSQL), and Streamlit.
 Live demo: https://investment-operations-dashboard.streamlit.app/
 
 ---
 
-## What it does
+## What it simulates
+
+This dashboard simulates the internal operations tooling of a custodian bank (BNP Paribas Securities Services, Citi Securities Services) managing fund operations on behalf of external asset managers. The four tabs cover the core daily workflows of a middle office static data and reconciliation team.
+
+---
+
+## The four tabs
 
 **Tab 1 — Static Data**
-Instruments, counterparties, and settlement instructions (SSI). Monitors SSI
-expiry status and flags counterparties with expired or pending KYC. SSI expiry
-is the leading operational cause of settlement fails in European equities markets.
+Reference data layer. Instruments with real prices fetched daily from Yahoo Finance via the yfinance API. Counterparties with BIC codes, LEI identifiers, and KYC status — expired KYC rows flagged red, pending flagged yellow. Settlement Instructions (SSI) per counterparty-instrument with expiry monitoring. A missing or expired SSI causes a settlement fail under CSDR rules.
 
 **Tab 2 — Reconciliation Breaks**
-Daily break register comparing internal position records against custodian records.
-Breaks classified by type (Quantity / Price / Missing / Corporate Action) and tracked
-through their lifecycle (Open / Investigating / Resolved). KPI cards show total open
-exposure in EUR.
+Daily break register comparing internal position records against custodian records. Breaks tracked through their lifecycle: Open (red), Investigating (yellow), Resolved (green). KPI cards show open break count, total EUR exposure, and resolved today.
 
 **Tab 3 — Trade Monitor**
-Rolling 10-day trade history. Flags overdue trades and pending trades with no active
-SSI on file. A pending trade with a missing SSI will fail on settlement date under
-CSDR rules, triggering mandatory buy-in procedures.
+Rolling 10-day trade history. Flags overdue trades in red. Flags pending trades with no active SSI in yellow. KPI cards show pending, settled, failed, and overdue counts.
 
 **Tab 4 — Fund Overview**
-AUM, NAV per share, fund type (UCITS/AIF), domicile, and asset class breakdown by
-market value for each of the five funds in the database.
+One card per fund showing AUM, NAV per share, fund type (UCITS or AIF), domicile, open break count, 30-day NAV trend chart, and asset class breakdown by market value.
+
+---
+
+## Data
+
+Instrument prices are real, updated daily via GitHub Actions running update_prices.py every weekday at 18:00 CET after European market close. Prices are fetched from Yahoo Finance via the yfinance API and stored in Supabase. NAV history is appended daily with realistic movements.
+
+Funds, positions, trades, counterparties, and reconciliation breaks are synthetic data built to realistic investment operations structure.
 
 ---
 
@@ -49,8 +52,7 @@ GROUP BY f.name, i.asset_class
 ORDER BY total_exposure_eur DESC;
 ```
 
-Identifies where break exposure is concentrated. A disproportionate exposure in one
-asset class often signals a missed corporate action affecting all positions simultaneously.
+Identifies where break exposure is concentrated. A disproportionate exposure in one asset class often signals a missed corporate action affecting all positions simultaneously.
 
 ### 2. Pending trades with no active SSI
 
@@ -69,9 +71,7 @@ WHERE t.status = 'Pending'
 ORDER BY t.settlement_date;
 ```
 
-The LEFT JOIN returning NULL on ssi_id means no active SSI exists for that
-counterparty-instrument pair. Without an SSI the custodian cannot generate a
-settlement instruction and the trade fails under CSDR.
+The LEFT JOIN returning NULL on ssi_id means no active SSI exists for that counterparty-instrument pair. Without an SSI the custodian cannot generate a settlement instruction and the trade fails under CSDR.
 
 ### 3. Positions held with no active SSI on file
 
@@ -88,24 +88,37 @@ AND p.position_date = CURRENT_DATE
 ORDER BY p.market_value_eur DESC;
 ```
 
-Positions the fund holds where no active SSI exists for any counterparty.
-Cannot be sold until an SSI is set up. Proactive identification prevents
-last-minute settlement fails when the PM decides to exit.
+Positions the fund holds where no active SSI exists for any counterparty. Cannot be sold until an SSI is set up.
 
 ---
 
-## Data
+## Automation
 
-Instrument prices are real, fetched from Yahoo Finance via yfinance.
-Funds, positions, trades, and reconciliation breaks are synthetic data
-built to realistic investment operations structure.
+Daily price refresh and NAV history update runs via GitHub Actions every weekday at 18:00 CET. Workflow file at `.github/workflows/daily_prices.yml`. Runs `update_prices.py` which fetches prices from Yahoo Finance and appends one NAV row per fund to the history table.
+
+---
+
+## Project structure
+
+```
+investment-ops-dashboard/
+├── app.py                          # Streamlit dashboard
+├── seed.py                         # One-time database population
+├── update_prices.py                # Daily price and NAV refresh
+├── requirements.txt
+├── .gitignore
+├── README.md
+└── .github/
+    └── workflows/
+        └── daily_prices.yml        # GitHub Actions schedule
+```
+
+---
 
 ## Stack
 
-Python 3.13 | pandas | Supabase (PostgreSQL) | Streamlit | yfinance
+Python 3.13 | pandas | Supabase (PostgreSQL) | Streamlit | yfinance | Plotly | GitHub Actions
 
 ## AI-assisted development
 
-Claude was used to validate the reconciliation break logic against real-world
-settlement scenarios, to debug the yfinance multi-ticker parsing, and to review
-the SSI validation SQL for edge cases (expired vs missing SSI).
+Claude was used to validate the reconciliation break logic against real-world settlement scenarios, to debug the yfinance multi-ticker parsing, and to review the SSI validation SQL for edge cases (expired vs missing SSI).
