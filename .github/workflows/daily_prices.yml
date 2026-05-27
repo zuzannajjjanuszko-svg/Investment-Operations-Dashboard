@@ -1,0 +1,28 @@
+name: Daily Price Refresh
+
+on:
+  schedule:
+    - cron: "0 17 * * 1-5" # 18:00 CET (17:00 UTC), Monday to Friday
+  workflow_dispatch: # allows manual trigger from GitHub Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install supabase yfinance "supabase==2.3.0" python-dotenv
+
+      - name: Run price refresh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python update_prices.py
