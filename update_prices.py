@@ -56,7 +56,7 @@ def append_nav_today():
     print("Appending NAV for today...")
     funds = supabase.table("funds").select("fund_id,nav_per_share,aum_eur").execute().data
     for fund in funds:
-        move = 1 + random.uniform(-0.003, 0.003)
+        move = 1 + random.uniform(-0.015, 0.015)
         new_nav = round(fund["nav_per_share"] * move, 4)
         new_aum = round(fund["aum_eur"] * move, 2)
         supabase.table("funds").update({
@@ -83,7 +83,7 @@ def backfill_nav(days=30):
             d = TODAY - timedelta(days=i)
             if d.weekday() >= 5:
                 continue
-            move = 1 + random.uniform(-0.003, 0.003)
+            move = 1 + random.uniform(-0.015, 0.015)
             nav = round(nav * move, 4)
             aum = round(aum * move, 2)
             supabase.table("nav_history").upsert({
