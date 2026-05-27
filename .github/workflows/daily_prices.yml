@@ -28,4 +28,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python update_prices.py
+        run: |
+          pip show yfinance
+          pip show websockets
+          python update_prices.py
