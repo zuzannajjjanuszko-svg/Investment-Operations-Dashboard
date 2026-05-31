@@ -1,10 +1,10 @@
 import os
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 from supabase import create_client
 from dotenv import load_dotenv
-import plotly.express as px
-#update content
+
 load_dotenv()
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL"))
@@ -35,6 +35,24 @@ nav_hist = load("nav_history")
 st.title("Fund Operations Dashboard")
 st.caption("Static data  |  Reconciliation  |  Trade monitoring  |  Fund overview")
 
+st.markdown("""
+This dashboard simulates the daily monitoring workflow of a middle office team at an institutional
+fund servicer (BNP Paribas Securities Services, Citi). These teams manage the operational data
+that makes securities settlement possible — ensuring instruments are correctly referenced,
+settlement instructions are on file, position records match the custodian, and trades settle on time.
+
+**Static Data** — Instruments, counterparties, and settlement instructions
+(SSI — pre-agreed instructions specifying where to deliver or receive securities on settlement date).
+A missing or expired SSI means a trade cannot settle and penalties apply under EU regulation (CSDR).  
+**Reconciliation Breaks** — Discrepancies between internal position records and custodian records,
+tracked from Open through Investigating to Resolved.  
+**Trade Monitor** — Last 10 days of trades. Flags overdue settlements and trades with no valid SSI on file.  
+**Fund Overview** — AUM, NAV per share, 30-day trend, and asset class breakdown per fund,
+with open break exposure as an operational risk indicator.
+
+*Instrument prices updated daily via GitHub Actions. NAV history refreshed each weekday after European market close.*
+""")
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "Static Data", "Reconciliation Breaks", "Trade Monitor", "Fund Overview"
 ])
@@ -42,6 +60,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # ── TAB 1 — STATIC DATA ──────────────────────────────────────────────
 with tab1:
+    st.caption("Reference data that must exist before any trade can settle.")
 
     st.subheader("Instruments")
     ac_filter = st.multiselect(
@@ -50,7 +69,7 @@ with tab1:
     )
     st.dataframe(
         inst[inst["asset_class"].isin(ac_filter)]
-            [["isin","name","asset_class","currency","exchange","price","price_date","active"]],
+            [["isin","name","asset_class","currency","exchange","price","price_date"]],
         use_container_width=True,
     )
 
@@ -74,6 +93,7 @@ with tab1:
     st.divider()
 
     st.subheader("Settlement Instructions (SSI)")
+    st.caption("Pre-agreed instructions specifying where to deliver or receive securities for each counterparty-instrument pair.")
     c1, c2 = st.columns(2)
     cp_sel     = c1.selectbox("Counterparty", ["All"] + list(cps["name"].sort_values()))
     ssi_status = c2.multiselect(
@@ -90,6 +110,7 @@ with tab1:
         if row["status"] == "Expired": return ["background-color:#C8A0A0"] * len(row)
         if row["status"] == "Pending": return ["background-color:#C8B888"] * len(row)
         return [""] * len(row)
+    st.caption("🔴 Expired SSI  🟡 Pending activation  ⬜ Active")
     st.dataframe(
         d[["ssi_id","name_cp","name_inst","instruction_type",
            "custodian_bic","currency","valid_from","valid_to","status"]]
@@ -104,6 +125,7 @@ with tab1:
 
 # ── TAB 2 — RECONCILIATION BREAKS ────────────────────────────────────
 with tab2:
+    st.caption("Daily discrepancies between internal position records and custodian records. Each break must be investigated and resolved before the next NAV calculation.")
 
     d = (breaks
          .merge(funds[["fund_id","name"]], on="fund_id", how="left")
@@ -140,9 +162,7 @@ with tab2:
         if row["status"] == "Open":          return ["background-color:#C8A0A0"] * len(row)
         if row["status"] == "Investigating": return ["background-color:#C8B888"] * len(row)
         return ["background-color:#A0B8A0"] * len(row)
-    
     st.caption("🔴 Open  🟡 Investigating  🟢 Resolved")
-
     st.dataframe(
         d[["break_id","name_fund","isin","name_inst","asset_class",
            "internal_qty","custodian_qty","break_qty","break_value_eur",
@@ -155,6 +175,7 @@ with tab2:
 
 # ── TAB 3 — TRADE MONITOR ────────────────────────────────────────────
 with tab3:
+    st.caption("Rolling 10-day trade history. A trade flagged red has missed its settlement date. A trade flagged yellow has no active SSI — it will fail on settlement date unless the instruction is set up before the custodian cut-off.")
 
     d = (trades
          .merge(funds[["fund_id","name"]], on="fund_id", how="left")
@@ -196,9 +217,7 @@ with tab3:
         if row["status"]=="Failed" or row["overdue"]: return ["background-color:#C8A0A0"]*len(row)
         if row["ssi_missing"]:                        return ["background-color:#C8B888"]*len(row)
         return [""]*len(row)
-    
     st.caption("🔴 Failed or overdue  🟡 Missing active SSI  ⬜ Normal")
-    
     st.dataframe(
         d[["trade_id","name_fund","name_inst","asset_class","trade_type",
            "quantity","price","trade_date","settlement_date","status",
@@ -212,9 +231,8 @@ with tab3:
 
 # ── TAB 4 — FUND OVERVIEW ────────────────────────────────────────────
 with tab4:
+    st.caption("One card per fund. Open break exposure shows which funds carry the most operational risk today.")
 
-    nav_hist = load("nav_history")
-    # Break summary per fund
     break_summary = (
         breaks[breaks["status"].isin(["Open","Investigating"])]
         .groupby("fund_id")
@@ -228,38 +246,30 @@ with tab4:
         n_breaks = int(b["open_breaks"].values[0]) if len(b) else 0
         exposure  = float(b["exposure"].values[0]) if len(b) else 0.0
 
-        label = f"{f['name']}  ({f['fund_type']})  —  {f['base_currency']}"
-        with st.expander(label, expanded=False):
-
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("AUM (EUR)",      f"{f['aum_eur']/1e6:.1f}M")
-            c2.metric("NAV / Share",    f"{f['nav_per_share']:.4f}")
-            c3.metric("Fund Type",      f["fund_type"])
-            c4.metric("Domicile",       f["domicile"])
-            c5.metric("Open Breaks",    n_breaks,
+        with st.expander(f"{f['name']}  ({f['fund_type']})  —  {f['base_currency']}", expanded=False):
+            c1,c2,c3,c4,c5,c6 = st.columns(6)
+            c1.metric("AUM (EUR)",    f"{f['aum_eur']/1e6:.1f}M")
+            c2.metric("NAV / Share",  f"{f['nav_per_share']:.4f}")
+            c3.metric("Fund Type",    f["fund_type"])
+            c4.metric("Domicile",     f["domicile"])
+            c5.metric("Open Breaks",  n_breaks,
                       delta=None if n_breaks == 0 else f"EUR {exposure:,.0f}",
                       delta_color="inverse")
-            c6.metric("NAV Date",       str(f["nav_date"]))
+            c6.metric("NAV Date",     str(f["nav_date"]))
 
-            col_chart, col_nav, col_pos = st.columns([1, 1, 1])
+            col_chart, col_nav, col_pos = st.columns([1,1,1])
 
-            # NAV trend
-            fh = nav_hist[nav_hist["fund_id"] == fid].sort_values("nav_date")
+            fh = nav_hist[nav_hist["fund_id"]==fid].sort_values("nav_date")
             if not fh.empty:
-                col_nav.caption("NAV per share — 30 day history")
-                fig = px.line(fh, x="nav_date", y="nav_per_share", title="NAV per share")
-                fig.update_yaxes(range=[fh["nav_per_share"].min() * 0.995, fh["nav_per_share"].max() * 1.005])
+                fig = px.line(fh, x="nav_date", y="nav_per_share", title="NAV per share — 30 day history")
+                fig.update_yaxes(range=[fh["nav_per_share"].min()*0.995,
+                                        fh["nav_per_share"].max()*1.005])
                 col_nav.plotly_chart(fig, use_container_width=True)
-            else:
-                col_nav.caption("No NAV history yet — run update_prices.py")
 
-            # Asset class breakdown
-            fp = pos[pos["fund_id"] == fid].merge(
-                inst[["isin", "asset_class"]], on="isin", how="left"
-            )
+            fp = pos[pos["fund_id"]==fid].merge(inst[["isin","asset_class"]], on="isin", how="left")
             if not fp.empty:
                 ac = fp.groupby("asset_class")["market_value_eur"].sum().reset_index()
-                ac.columns = ["Asset Class", "Market Value EUR"]
+                ac.columns = ["Asset Class","Market Value EUR"]
                 col_chart.caption("Portfolio by asset class")
                 col_chart.bar_chart(ac.set_index("Asset Class"))
                 col_pos.caption("Breakdown (EUR)")
