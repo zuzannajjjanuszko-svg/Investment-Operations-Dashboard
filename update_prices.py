@@ -52,6 +52,38 @@ def update_prices():
     print(f"  {updated} prices updated, {failed} failed.")
 
 
+def roll_synthetic_dates():
+    """Positions, trades, reconciliation breaks, SSIs and KYC dates are synthetic
+    demo records dated "as of" the latest position_date. Shift them all forward
+    so that date becomes today. Relative dates (overdue, expired, resolved today)
+    are preserved. No-op when already current."""
+    print("Rolling synthetic records to today...")
+    top = (supabase.table("positions").select("position_date")
+           .order("position_date", desc=True).limit(1).execute().data)
+    if not top:
+        return
+    shift = (TODAY - date.fromisoformat(top[0]["position_date"])).days
+    if shift <= 0:
+        print("  Already current.")
+        return
+    # positions last: it is the anchor, so a failed run is retried in full
+    plan = [
+        ("trades",                  "trade_id",        ["trade_date", "settlement_date"]),
+        ("reconciliation_breaks",   "break_id",        ["created_date", "resolved_date"]),
+        ("settlement_instructions", "ssi_id",          ["valid_from", "valid_to"]),
+        ("counterparties",          "counterparty_id", ["kyc_expiry"]),
+        ("positions",               "position_id",     ["position_date"]),
+    ]
+    for table, pk, cols in plan:
+        rows = supabase.table(table).select("*").execute().data
+        for r in rows:
+            for c in cols:
+                if r.get(c):
+                    r[c] = str(date.fromisoformat(r[c]) + timedelta(days=shift))
+        supabase.table(table).upsert(rows, on_conflict=pk).execute()
+        print(f"  {table}: {len(rows)} rows moved +{shift} days")
+
+
 def append_nav_today():
     print("Appending NAV for today...")
     funds = supabase.table("funds").select("fund_id,nav_per_share,aum_eur").execute().data
@@ -100,5 +132,6 @@ if __name__ == "__main__":
         backfill_nav(30)
     else:
         update_prices()
+        roll_synthetic_dates()
         append_nav_today()
     print("Done.")

@@ -32,7 +32,7 @@ One card per fund showing AUM, NAV per share, fund type (UCITS or AIF), domicile
 
 Instrument prices are real, updated daily via GitHub Actions running update_prices.py every weekday at 18:00 CET after European market close. Prices are fetched from Yahoo Finance via the yfinance API and stored in Supabase. NAV history is appended daily with realistic movements.
 
-Funds, positions, trades, counterparties, and reconciliation breaks are synthetic data built to realistic investment operations structure.
+Funds, positions, trades, counterparties, and reconciliation breaks are synthetic data built to realistic investment operations structure. Their dates are rolled forward by the same daily job, so the overdue, expired and resolved-today counts always reflect the current date.
 
 ---
 
