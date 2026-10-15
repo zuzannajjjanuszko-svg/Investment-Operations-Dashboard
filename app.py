@@ -43,25 +43,35 @@ st.set_page_config(
 
 
 @st.cache_data(ttl=300)
-def load(table):
-    return pd.DataFrame(supabase.table(table).select("*").execute().data)
+def load(table, order, since_col=None, since_days=None):
+    """Read a whole table, 1,000 rows per request (the API limit), optionally only recent rows."""
+    rows, start = [], 0
+    while True:
+        q = supabase.table(table).select("*")
+        if since_col:
+            q = q.gte(since_col, str(pd.Timestamp.today().date() - pd.Timedelta(days=since_days)))
+        batch = q.order(order).range(start, start + 999).execute().data
+        rows += batch
+        if len(batch) < 1000:
+            return pd.DataFrame(rows)
+        start += 1000
 
 
-funds    = load("funds")
-inst     = load("instruments")
-cps      = load("counterparties")
-ssi      = load("settlement_instructions")
-pos      = load("positions")
-trades   = load("trades")
-breaks   = load("reconciliation_breaks")
-nav_hist = load("nav_history")
+funds    = load("funds", "fund_id")
+inst     = load("instruments", "isin")
+cps      = load("counterparties", "counterparty_id")
+ssi      = load("settlement_instructions", "ssi_id")
+pos      = load("positions", "position_id")
+trades   = load("trades", "trade_id", "trade_date", 14)
+breaks   = load("reconciliation_breaks", "break_id", "created_date", 60)
+nav_hist = load("nav_history", "id", "nav_date", 45)
 
 st.title("Fund Operations Dashboard")
 st.caption("Static data  |  Reconciliation  |  Trade monitoring  |  Fund overview  |  AI Assistant")
 
 st.markdown("""
 This dashboard simulates the daily monitoring workflow of a middle office team at an institutional
-fund servicer (BNP Paribas Securities Services, Citi). These teams manage the operational data
+fund servicer. These teams manage the operational data
 that makes securities settlement possible — ensuring instruments are correctly referenced,
 settlement instructions are on file, position records match the custodian, and trades settle on time.
 
@@ -70,12 +80,12 @@ settlement instructions are on file, position records match the custodian, and t
 A missing or expired SSI means a trade cannot settle and penalties apply under EU regulation (CSDR).  
 **Reconciliation Breaks** — Discrepancies between internal position records and custodian records,
 tracked from Open through Investigating to Resolved.  
-**Trade Monitor** — Last 10 days of trades. Flags overdue settlements and trades with no valid SSI on file.  
-**Fund Overview** — AUM, NAV per share, 30-day trend, and asset class breakdown per fund,
+**Trade Monitor** — Last two weeks of trades. Flags overdue settlements and trades with no valid SSI on file.  
+**Fund Overview** — AUM, NAV per share, 30-day trend, and country breakdown of the monitored holdings per fund,
 with open break exposure as an operational risk indicator.  
 **AI Assistant** — Ask any question about the current state of the data in plain English.
 
-*Instrument prices updated daily via GitHub Actions. NAV history refreshed each weekday after European market close.*
+*Real data: instrument prices, FX rates and the NAV of the five UCITS ETFs (Yahoo Finance, refreshed each weekday by a GitHub Actions pipeline); counterparty and fund identifiers. Simulated data: positions, trades, settlement instructions and reconciliation breaks, generated from the real prices and updated one business day at a time.*
 """)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -200,7 +210,7 @@ with tab2:
 
 # ── TAB 3 — TRADE MONITOR ────────────────────────────────────────────
 with tab3:
-    st.caption("Rolling 10-day trade history. A trade flagged red has missed its settlement date. A trade flagged yellow has no active SSI and will fail on settlement date unless the instruction is set up before the custodian cut-off.")
+    st.caption("Rolling two-week trade history. A trade flagged red has missed its settlement date. A trade flagged yellow has no active SSI and will fail on settlement date unless the instruction is set up before the custodian cut-off.")
 
     d = (trades
          .merge(funds[["fund_id","name"]], on="fund_id", how="left")
@@ -284,19 +294,20 @@ with tab4:
 
             col_chart, col_nav, col_pos = st.columns([1,1,1])
 
-            fh = nav_hist[nav_hist["fund_id"]==fid].sort_values("nav_date")
+            fh = nav_hist[(nav_hist["fund_id"]==fid) &
+                          (pd.to_datetime(nav_hist["nav_date"]) >= pd.Timestamp.today() - pd.Timedelta(days=30))].sort_values("nav_date")
             if not fh.empty:
-                fig = px.line(fh, x="nav_date", y="nav_per_share", title="NAV per share — 30 day history")
+                fig = px.line(fh, x="nav_date", y="nav_per_share", title="NAV per share (EUR) — 30 day history")
                 fig.update_yaxes(range=[fh["nav_per_share"].min()*0.995,
                                         fh["nav_per_share"].max()*1.005])
                 col_nav.plotly_chart(fig, use_container_width=True)
 
-            fp = pos[pos["fund_id"]==fid].merge(inst[["isin","asset_class"]], on="isin", how="left")
+            fp = pos[pos["fund_id"]==fid].merge(inst[["isin","country"]], on="isin", how="left")
             if not fp.empty:
-                ac = fp.groupby("asset_class")["market_value_eur"].sum().reset_index()
-                ac.columns = ["Asset Class","Market Value EUR"]
-                col_chart.caption("Portfolio by asset class")
-                col_chart.bar_chart(ac.set_index("Asset Class"))
+                ac = fp.groupby("country")["market_value_eur"].sum().reset_index()
+                ac.columns = ["Country","Market Value EUR"]
+                col_chart.caption("Monitored holdings by country of issuer")
+                col_chart.bar_chart(ac.set_index("Country"))
                 col_pos.caption("Breakdown (EUR)")
                 col_pos.dataframe(ac, use_container_width=True)
 
@@ -342,7 +353,7 @@ RECONCILIATION BREAKS:
 BREAKS BY FUND:
 {breaks.groupby("fund_id")["break_id"].count().reset_index().rename(columns={"break_id":"break_count"}).to_string(index=False)}
 
-TRADES (last 10 days):
+TRADES (last two weeks):
 - Total: {len(trades)}
 - Pending: {(trades["status"]=="Pending").sum()}
 - Settled: {(trades["status"]=="Settled").sum()}
