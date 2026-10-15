@@ -16,6 +16,25 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel("gemini-3.6-flash")
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def ask_gemini(prompt):
+    """Cached per prompt so Streamlit reruns (tab or button clicks) do not re-send the
+    same question and burn the free-tier quota. Errors are raised, so they are not cached."""
+    return model.generate_content(prompt).text
+
+
+def show_answer(prompt):
+    try:
+        st.markdown(ask_gemini(prompt))
+    except Exception as e:
+        msg = str(e)
+        if "429" in msg or "quota" in msg.lower():
+            st.warning("The AI quota is used up for the moment (free tier: 5 requests per minute). "
+                       "Wait about a minute and ask again.")
+        else:
+            st.error(f"Error: {e}")
+
 st.set_page_config(
     page_title="Fund Operations Dashboard",
     page_icon=":bar_chart:",
@@ -341,11 +360,7 @@ EXPIRED SSIs:
         with st.spinner("Analysing..."):
             context = build_context()
             prompt = f"{context}\n\nQuestion: {question}\n\nAnswer:"
-            try:
-                response = model.generate_content(prompt)
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"Error: {e}")
+            show_answer(prompt)
 
     st.markdown("**Example questions:**")
     examples = [
@@ -361,8 +376,4 @@ EXPIRED SSIs:
             with st.spinner("Analysing..."):
                 context = build_context()
                 prompt = f"{context}\n\nQuestion: {ex}\n\nAnswer:"
-                try:
-                    response = model.generate_content(prompt)
-                    st.markdown(response.text)
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                show_answer(prompt)
